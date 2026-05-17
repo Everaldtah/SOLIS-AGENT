@@ -23,7 +23,6 @@
 
 import https from "node:https";
 import http from "node:http";
-import { exec } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { ghRead, ghWrite } from "../src/sync/github-storage.mjs";
 import { nextApiKey as nextNimKey } from "../src/storage/keypool.mjs";
@@ -33,7 +32,7 @@ import {
   recordTurn as memoryRecordTurn,
   distillFacts as memoryDistill,
 } from "../src/memory/cloud-memory.mjs";
-import { ubuntuExec, ubuntuSandboxAvailable, ubuntuSandboxBackend } from "../src/tools/ubuntu-sandbox.mjs";
+import { openHeliosSession, isHeliosTool, execHeliosTool, HELIOS_TOOLS } from "../src/tools/helios-integration.mjs";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -304,44 +303,10 @@ async function execWinTool(name, args) {
 
 // ── Linux shell + memory tools for the coordinator (always available) ────────
 
-const LINUX_TOOLS = [
-  {
-    type: "function",
-    function: {
-      name: "shell_exec",
-      description:
-        "Execute a bash command on the Vercel Linux server (Amazon Linux). " +
-        "Fast, ephemeral. Available: bash, python3, node, curl, wget, git, grep, awk, sed, jq, find, zip, openssl. " +
-        "/tmp is writable. No apt. Returns stdout, stderr, exit_code.",
-      parameters: {
-        type: "object",
-        properties: {
-          command: { type: "string", description: "Bash command to run" },
-          timeout_ms: { type: "integer", description: "Max ms (default 25000, max 60000)" },
-        },
-        required: ["command"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "ubuntu_exec",
-      description:
-        "Run a bash command inside a fresh Ubuntu sandbox (full apt, longer execution budget). " +
-        "Use this when shell_exec is insufficient — apt install, compiled binaries, services, " +
-        "or jobs that need >60s. Cold-start cost ~2-5s, so prefer shell_exec for cheap one-shots.",
-      parameters: {
-        type: "object",
-        properties: {
-          command:   { type: "string", description: "Bash command to run in Ubuntu" },
-          timeout_ms:{ type: "integer", description: "Max ms (default 60000, max 120000)" },
-        },
-        required: ["command"],
-      },
-    },
-  },
-];
+// All Linux/coding tools come from HELIOS (shell, read_file, write_file,
+// grep, glob, apply_patch, code_task, web_search, web_fetch). Each routes
+// to the session's E2B sandbox where codex + openclaude are preinstalled.
+const LINUX_TOOLS = HELIOS_TOOLS;
 
 const MEMORY_TOOLS = [
   {
@@ -398,25 +363,10 @@ async function execMemoryTool(name, args, ctx = {}) {
 
 const MEMORY_TOOL_NAMES = new Set(MEMORY_TOOLS.map(t => t.function.name));
 
-function execLinuxTool(name, args) {
-  if (name === "shell_exec") {
-    const timeout = Math.min(args.timeout_ms ?? 25000, 60000);
-    return new Promise(resolve =>
-      exec(
-        args.command,
-        { timeout, maxBuffer: 1024 * 512, shell: "/bin/bash" },
-        (err, stdout, stderr) => resolve({
-          stdout: (stdout ?? "").slice(0, 6000),
-          stderr: (stderr ?? "").slice(0, 2000),
-          exit_code: err?.code ?? 0,
-        })
-      )
-    );
-  }
-  if (name === "ubuntu_exec") {
-    return ubuntuExec(args.command ?? "", { timeout_ms: args.timeout_ms });
-  }
-  return Promise.resolve({ error: `Unknown Linux tool: ${name}` });
+async function execLinuxTool(name, args, ctx = {}) {
+  if (!isHeliosTool(name)) return { error: `Unknown Linux tool: ${name}` };
+  if (!ctx.heliosSession)  return { error: "helios session not initialized" };
+  return await execHeliosTool(ctx.heliosSession, name, args);
 }
 
 const LINUX_TOOL_NAMES = new Set(LINUX_TOOLS.map(t => t.function.name));
@@ -429,24 +379,26 @@ function buildCoordinatorSystemPrompt() {
     ? `\n## Windows Desktop Tools\nYou have full control of a live Windows 10 desktop. Use win_screenshot first to see the current state, then use the mouse/keyboard/shell tools to accomplish tasks.\n`
     : "\n## Windows Desktop\nNot configured (set WINDOWS_BRIDGE_URL to enable).\n";
 
-  return `You are Solis in Computer Mode — an AI coordinator managing a team of specialist AI models with direct OS access.
+  return `You are Solis in Computer Mode — an AI coordinator managing a team of specialist AI models with direct OS access via the HELIOS coding-agent harness.
 
 ## Your Role
 - Analyze the user's request
-- Use the Linux shell for any real work (data fetching, file processing, running scripts, web calls)
+- Use the HELIOS sandbox for any real Linux/coding work
 - Delegate pure research/analysis subtasks to specialists
 - Use Windows desktop tools when the task requires real desktop interaction
 - Synthesize all results into a comprehensive final answer
 
-## Linux Shell Tools (always available)
-- **shell_exec** — bash on Amazon Linux (Vercel runtime). Fast (<1s start),
-  ephemeral, /tmp writable. Pre-installed: bash, python3, node, curl, wget,
-  git, grep, awk, sed, jq, find, zip, openssl. No apt. Use this by default.
-- **ubuntu_exec** — bash inside a fresh Ubuntu sandbox. Use when:
-    * you need apt-get install <pkg>
-    * you need a compiled binary that isn't on Amazon Linux
-    * the job needs more than 60s of execution time
-  Cold-start ~2-5s, so don't use for trivial one-shots.
+## Execution environment (HELIOS — always available)
+A sticky Ubuntu sandbox (E2B) with codex + openclaude pre-installed runs
+your shell, file, and coding tools. Files survive across turns within the
+session. HELIOS routes each call to the strongest backend.
+
+- **shell** — bash in the Ubuntu sandbox (apt, full Linux, persistent FS)
+- **read_file**, **write_file** — sandbox filesystem I/O
+- **grep**, **glob** — ripgrep search and filesystem glob
+- **apply_patch** — apply a unified diff (codex apply-patch)
+- **code_task** — delegate a multi-step coding task to a sub-agent (codex or openclaude)
+- **web_search**, **web_fetch** — research the web
 - Prefer real commands over speculation.
 
 ## Persistent Memory (always available)
@@ -599,6 +551,29 @@ export default async function handler(req, res) {
         });
         persist();
         break;
+      case "exec_visual":
+        // Rich live-execution feed for the Exec Viewer panel. Merge start
+        // + end events by execId so the persisted record stays compact.
+        if (!jobBase.execVisuals) jobBase.execVisuals = [];
+        if (data.phase === "start") {
+          jobBase.execVisuals.push({
+            execId: data.execId, tool: data.tool, kind: data.kind,
+            backend: data.backend, code: data.code, path: data.path,
+            startedAt: data.startedAt, status: "running",
+          });
+        } else if (data.phase === "end") {
+          const ev = jobBase.execVisuals.find((e) => e.execId === data.execId);
+          const patch = {
+            stdout: data.stdout, stderr: data.stderr, reply: data.reply,
+            files: data.files, exit_code: data.exit_code, error: data.error,
+            endedAt: data.endedAt,
+            status: data.error || data.exit_code !== 0 ? "failed" : "done",
+          };
+          if (ev) Object.assign(ev, patch);
+          else jobBase.execVisuals.push({ execId: data.execId, tool: data.tool, ...patch });
+        }
+        persist();
+        break;
       case "reply":
         jobBase.reply = data.text;
         jobBase.status = "done";
@@ -618,6 +593,7 @@ export default async function handler(req, res) {
   // Keep running after client disconnects (Vercel honours event loop up to maxDuration).
   req.on?.("close", () => { /* no-op */ });
 
+  let heliosOpen = null;
   try {
     // ── Phase 1: Planning ────────────────────────────────────────────────────
     send("phase", { phase: "planning", message: "Coordinator analyzing task…" });
@@ -728,7 +704,15 @@ You have been assigned a specific subtask as part of a larger collaborative effo
       }
     } catch {}
 
-    const coordinatorCtx = { sessionId: sessionId ?? null };
+    // Open a HELIOS session for the duration of this computer-mode run.
+    // The same sandbox handles every Linux tool call from the coordinator,
+    // so files written by an early `shell` call survive for later steps.
+    heliosOpen = await openHeliosSession(sessionId ?? `cm_${jobId}`, {
+      baseUrl: COORDINATOR.baseUrl,
+      apiKey:  coordinatorKey,
+      model:   COORDINATOR.model,
+    }).catch(() => null);
+    const coordinatorCtx = { sessionId: sessionId ?? null, heliosSession: heliosOpen?.session ?? null };
 
     const toolMessages = [
       { role: "system", content: buildCoordinatorSystemPrompt() + memoryBlock },
@@ -800,8 +784,37 @@ You have been assigned a specific subtask as part of a larger collaborative effo
           pending: true,
         });
 
+        // exec_visual — richer event for the Exec Viewer panel. Carries the
+        // *full* code body, the backend label, and (in the post-exec emit)
+        // the full stdout/stderr + any file edits. This is what the user
+        // actually wants to see when watching the agent work.
+        const execId = randomUUID();
+        const codeBody =
+          fnArgs.command ??
+          fnArgs.script  ??
+          fnArgs.task    ??
+          fnArgs.patch   ??
+          fnArgs.content ??
+          fnArgs.query   ??
+          fnArgs.url     ??
+          "";
+        const backendLabel =
+          kind === "windows"             ? "windows-bridge"
+          : kind === "memory"            ? "solis-memory"
+          : fnName === "apply_patch"     ? "codex"
+          : fnName === "code_task"       ? (fnArgs.backend === "codex" ? "codex" : "openclaude")
+          : (fnName === "web_search" || fnName === "web_fetch") ? "openclaude"
+          : "shell";
+        send("exec_visual", {
+          phase: "start",
+          execId, tool: fnName, kind, backend: backendLabel,
+          code: String(codeBody),
+          path: fnArgs.path ?? null,
+          startedAt: Date.now(),
+        });
+
         let result;
-        if (kind === "linux")        result = await execLinuxTool(fnName, fnArgs);
+        if (kind === "linux")        result = await execLinuxTool(fnName, fnArgs, coordinatorCtx);
         else if (kind === "windows") result = await execWinTool(fnName, fnArgs);
         else if (kind === "memory")  result = await execMemoryTool(fnName, fnArgs, coordinatorCtx);
         else                         result = { error: `Unknown tool: ${fnName}` };
@@ -817,6 +830,18 @@ You have been assigned a specific subtask as part of a larger collaborative effo
           kind, action: fnName,
           args: String(argPreview).slice(0, 300),
           result: String(preview).slice(0, 600),
+        });
+
+        send("exec_visual", {
+          phase: "end",
+          execId, tool: fnName, kind, backend: backendLabel,
+          stdout: String(result?.stdout ?? "").slice(0, 32000),
+          stderr: String(result?.stderr ?? "").slice(0, 16000),
+          reply:  result?.reply  ? String(result.reply).slice(0, 16000)  : null,
+          files:  Array.isArray(result?.files) ? result.files.slice(0, 50) : [],
+          exit_code: result?.exit_code ?? (result?.error ? 1 : 0),
+          error:  result?.error ?? null,
+          endedAt: Date.now(),
         });
 
         // Special-case: emit win_screenshot images to the desktop viewer too.
@@ -907,5 +932,6 @@ Synthesize everything into the best possible final answer.`,
   // Flush the final job record to GitHub before letting the function exit.
   await writeChain.catch(() => {});
   await ghSafeWrite(JSON.stringify({ ...jobBase, updated: Date.now() }, null, 2)).catch(() => {});
+  try { await heliosOpen?.close(); } catch {}
   try { res.end(); } catch {}
 }

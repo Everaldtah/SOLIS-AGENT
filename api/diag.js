@@ -9,6 +9,7 @@
 import https from "node:https";
 import { poolSize, nextApiKey } from "../src/storage/keypool.mjs";
 import { ubuntuSandboxAvailable, ubuntuSandboxBackend } from "../src/tools/ubuntu-sandbox.mjs";
+import { HELIOS_VERSION } from "@everaldtah/helios";
 
 function nimPing(model, apiKey, timeoutMs = 18000) {
   return new Promise(resolve => {
@@ -108,6 +109,11 @@ export default async function handler(req, res) {
       backend: ubuntuSandboxBackend(),
       e2b_key_set: has("E2B_API_KEY"),
       remote_bridge_set: has("UBUNTU_BRIDGE_URL"),
+    },
+    helios: {
+      version: HELIOS_VERSION,
+      template: process.env.HELIOS_E2B_TEMPLATE || "helios-base",
+      e2b_key_set: has("E2B_API_KEY"),
     },
     runtime: {
       node: process.version,

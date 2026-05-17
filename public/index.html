@@ -136,6 +136,35 @@
     .desktop-not-configured code{color:#444;background:#141414;padding:2px 6px;border-radius:3px;font-size:0.78rem}
     .dab-btn{background:#141414;border:1px solid #222;border-radius:6px;padding:3px 8px;color:#555;font-family:inherit;font-size:0.7rem;cursor:pointer}
     .dab-btn:hover{color:#d4d4d4;border-color:#333}
+    /* ── Exec Viewer (HELIOS live code execution) ── */
+    .exec-wrap{padding:0;border-top:1px solid #181818}
+    .exec-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 14px;background:#0a0a0a;border-bottom:1px solid #161616;color:#475569;font-size:0.7rem}
+    .exec-feed{background:#000;padding:10px 12px;max-height:520px;overflow-y:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:0.74rem;line-height:1.55}
+    .exec-empty{color:#2a2a2a;text-align:center;padding:36px 16px;font-style:italic;font-size:0.78rem}
+    .exec-block{margin-bottom:14px;border:1px solid #161616;border-radius:6px;background:#070707;overflow:hidden}
+    .exec-block.running{border-color:#f59e0b55;box-shadow:0 0 0 1px #f59e0b22}
+    .exec-block.failed{border-color:#7f1d1d}
+    .exec-block.done   {border-color:#1e293b}
+    .exec-head{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#0c0c0c;border-bottom:1px solid #141414;font-size:0.7rem}
+    .exec-tool{color:#d4d4d4;font-weight:600}
+    .exec-backend{padding:1px 6px;border-radius:10px;font-size:0.62rem;border:1px solid #1e1e1e;color:#94a3b8}
+    .exec-backend.shell      {color:#86efac;border-color:#14532d}
+    .exec-backend.codex      {color:#a5b4fc;border-color:#3730a3}
+    .exec-backend.openclaude {color:#fcd34d;border-color:#854d0e}
+    .exec-backend.windows-bridge{color:#67e8f9;border-color:#155e75}
+    .exec-backend.solis-memory  {color:#c084fc;border-color:#5b21b6}
+    .exec-status{margin-left:auto;font-size:0.62rem;color:#475569}
+    .exec-status.running{color:#f59e0b;animation:pulse 1s infinite}
+    .exec-status.failed {color:#fca5a5}
+    .exec-status.done   {color:#22c55e}
+    .exec-code{padding:8px 10px;color:#86efac;white-space:pre-wrap;word-break:break-all;background:#020202;border-bottom:1px solid #141414;max-height:160px;overflow:auto}
+    .exec-out{padding:6px 10px;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;border-left:2px solid #1e293b;margin:6px 10px}
+    .exec-out.err{color:#fca5a5;border-left-color:#7f1d1d}
+    .exec-out.reply{color:#fde68a;border-left-color:#854d0e}
+    .exec-files{padding:4px 10px 8px;color:#67e8f9;font-size:0.68rem}
+    .exec-files-label{color:#475569;font-size:0.62rem;text-transform:uppercase;letter-spacing:.06em;margin-right:6px}
+    .exec-rc{margin-left:auto;font-size:0.62rem;color:#475569}
+    .exec-rc.bad{color:#fca5a5}
     /* ── Linux Shell viewer ── */
     .shell-wrap{padding:0;border-top:1px solid #181818}
     .shell-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 14px;background:#0a0a0a;border-bottom:1px solid #161616;color:#475569;font-size:0.7rem}
@@ -231,7 +260,7 @@
       <div class="row"><span class="label">Status</span><span class="value ok">● Online</span></div>
       <div class="row"><span class="label">Primary Model</span><span class="value">meta/llama-3.3-70b-instruct</span></div>
       <div class="row"><span class="label">Computer Mode</span><span class="value ok">✓ DeepSeek · GLM · Qwen · MiniMax</span></div>
-      <div class="row"><span class="label">Linux Shell</span><span class="value ok" id="shell-status">✓ Connected (Vercel Amazon Linux)</span></div>
+      <div class="row"><span class="label">Linux Shell</span><span class="value ok" id="shell-status">✓ HELIOS sandbox (Ubuntu · codex + openclaude)</span></div>
       <div class="row"><span class="label">Background Jobs</span><span class="value ok">✓ Runs after page close</span></div>
       <div class="row"><span class="label">Telegram</span><span class="value"><a href="https://t.me/SolisTermuxclaw_bot" target="_blank">@SolisTermuxclaw_bot →</a></span></div>
     </div>
@@ -319,11 +348,30 @@
     <div id="shell-panel" style="display:none">
       <div class="shell-wrap">
         <div class="shell-meta">
-          <span>Vercel Amazon Linux · /tmp writable · bash, python3, node, curl, wget, git, jq, openssl</span>
+          <span>HELIOS sandbox · Ubuntu 22.04 · codex + openclaude preinstalled · apt available · persistent FS per session</span>
           <button class="dab-btn" onclick="clearShellFeed()">clear</button>
         </div>
         <div class="shell-feed" id="shell-feed">
-          <div class="shell-empty">No shell activity yet. Send a prompt — every <code>shell_exec</code> the agent runs will stream here with stdout/stderr.</div>
+          <div class="shell-empty">No shell activity yet. Send a prompt — every <code>shell</code> command the agent runs will stream here with stdout/stderr.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Exec Viewer — full code body + output, per tool call -->
+  <div class="card" id="exec-card">
+    <div class="section-head" style="cursor:pointer" onclick="toggleExec()">
+      <span class="section-title">🖥️ Exec Viewer <span class="badge" id="exec-count" style="margin-left:6px">0</span></span>
+      <span class="badge" id="exec-chevron">▼ expand</span>
+    </div>
+    <div id="exec-panel" style="display:none">
+      <div class="exec-wrap">
+        <div class="exec-meta">
+          <span>Live HELIOS execution feed — full code, stdout, stderr, file edits. Backend label shows whether codex, openclaude, or a direct sandbox shell handled the call.</span>
+          <button class="dab-btn" onclick="clearExecFeed()">clear</button>
+        </div>
+        <div class="exec-feed" id="exec-feed">
+          <div class="exec-empty">No execution yet. Send a prompt in Computer Mode — every tool call (<code>shell</code>, <code>write_file</code>, <code>apply_patch</code>, <code>code_task</code>, …) will appear here with its full body and live output.</div>
         </div>
       </div>
     </div>
@@ -687,6 +735,12 @@ function handleComputerEvent(evt) {
       if (replyEl) replyEl.innerHTML = renderMd(evt.text);
       if (phaseText) phaseText.textContent = 'Complete';
       if (phaseDot) { phaseDot.style.background='#22c55e'; phaseDot.style.animation='none'; }
+      break;
+    }
+
+    case 'exec_visual': {
+      // Rich live execution feed — full code, full output, file edits, backend label.
+      execApplyEvent(evt);
       break;
     }
   }
@@ -1179,6 +1233,129 @@ function shellSyncFromJobs() {
 // Sync on load + every 5s alongside job polling
 shellSyncFromJobs();
 setInterval(shellSyncFromJobs, 5000);
+
+// ── Exec Viewer (HELIOS live code execution) ─────────────────────────────────
+//
+// Sources:
+//   1) inline SSE during a /computer run — handleComputerEvent dispatches
+//      `exec_visual` events here via execApplyEvent.
+//   2) persisted job records — computer-mode jobs include execVisuals[],
+//      rehydrated below so a refresh reconstructs the feed.
+
+let execOpen = false;
+const execBlocks = new Map(); // execId -> dom row
+
+function toggleExec(){
+  execOpen = !execOpen;
+  document.getElementById('exec-panel').style.display = execOpen ? 'block' : 'none';
+  document.getElementById('exec-chevron').textContent = execOpen ? '▲ collapse' : '▼ expand';
+}
+
+function clearExecFeed(){
+  execBlocks.clear();
+  const feed = document.getElementById('exec-feed');
+  feed.innerHTML = '<div class="exec-empty">Cleared.</div>';
+  updateExecCount();
+}
+
+function updateExecCount(){
+  const el = document.getElementById('exec-count');
+  if (el) el.textContent = String(execBlocks.size);
+}
+
+function renderExecBlock(state) {
+  const id = state.execId || ('e-' + Math.random().toString(36).slice(2));
+  const codeBody = (state.code || '').toString();
+  const stdout   = (state.stdout || '').toString();
+  const stderr   = (state.stderr || '').toString();
+  const reply    = (state.reply  || '').toString();
+  const files    = Array.isArray(state.files) ? state.files : [];
+  const errored  = state.status === 'failed' || (state.exit_code != null && state.exit_code !== 0) || !!state.error;
+  const running  = state.status === 'running';
+  const statusCls = running ? 'running' : errored ? 'failed' : 'done';
+  const statusText = running ? 'running…' : errored ? 'failed' : 'done';
+  const dur = (state.startedAt && state.endedAt) ? Math.max(0, state.endedAt - state.startedAt) : null;
+
+  const backendCls = (state.backend || 'shell').replace(/[^a-z-]/g, '');
+  const block = document.createElement('div');
+  block.className = `exec-block ${statusCls}`;
+  block.dataset.execId = id;
+  block.innerHTML = `
+    <div class="exec-head">
+      <span class="exec-tool">${escHtml(state.tool || '?')}</span>
+      <span class="exec-backend ${backendCls}">${escHtml(state.backend || 'shell')}</span>
+      ${state.path ? `<span class="exec-files-label">path</span><span style="color:#cbd5e1">${escHtml(state.path)}</span>` : ''}
+      <span class="exec-status ${statusCls}">${statusText}</span>
+      ${state.exit_code != null ? `<span class="exec-rc ${errored ? 'bad' : ''}">rc=${state.exit_code}</span>` : ''}
+      ${dur != null ? `<span class="exec-rc">${dur}ms</span>` : ''}
+    </div>
+    ${codeBody ? `<div class="exec-code">${escHtml(codeBody)}</div>` : ''}
+    ${stdout    ? `<div class="exec-out">${escHtml(stdout)}</div>` : ''}
+    ${stderr    ? `<div class="exec-out err">${escHtml(stderr)}</div>` : ''}
+    ${reply     ? `<div class="exec-out reply">${escHtml(reply)}</div>` : ''}
+    ${state.error ? `<div class="exec-out err">${escHtml(state.error)}</div>` : ''}
+    ${files.length ? `<div class="exec-files"><span class="exec-files-label">files</span>${files.map(f => escHtml(f)).join(', ')}</div>` : ''}
+  `;
+  return block;
+}
+
+function execApplyEvent(evt) {
+  const feed = document.getElementById('exec-feed');
+  const emptyEl = feed.querySelector('.exec-empty');
+  if (emptyEl) emptyEl.remove();
+
+  if (evt.phase === 'start') {
+    const state = {
+      execId: evt.execId, tool: evt.tool, backend: evt.backend,
+      code: evt.code, path: evt.path, startedAt: evt.startedAt,
+      status: 'running',
+    };
+    const block = renderExecBlock(state);
+    execBlocks.set(evt.execId, { el: block, state });
+    feed.appendChild(block);
+    feed.scrollTop = feed.scrollHeight;
+    updateExecCount();
+    return;
+  }
+
+  if (evt.phase === 'end') {
+    const prev = execBlocks.get(evt.execId);
+    const state = Object.assign({}, prev?.state || {}, evt, {
+      status: evt.error || (evt.exit_code != null && evt.exit_code !== 0) ? 'failed' : 'done',
+    });
+    const block = renderExecBlock(state);
+    if (prev?.el?.parentNode) {
+      prev.el.replaceWith(block);
+    } else {
+      feed.appendChild(block);
+    }
+    execBlocks.set(evt.execId, { el: block, state });
+    feed.scrollTop = feed.scrollHeight;
+    updateExecCount();
+  }
+}
+
+/** Rehydrate from job records (execVisuals[]). De-duped by execId. */
+function execSyncFromJobs() {
+  try {
+    const jobs = getJobs();
+    for (const job of jobs) {
+      const evs = job.execVisuals || [];
+      for (const ev of evs) {
+        if (!ev.execId || execBlocks.has(ev.execId)) continue;
+        const state = Object.assign({}, ev);
+        if (!state.status) state.status = (state.error || state.exit_code) ? 'failed' : 'done';
+        const block = renderExecBlock(state);
+        document.getElementById('exec-feed').appendChild(block);
+        execBlocks.set(ev.execId, { el: block, state });
+      }
+    }
+    updateExecCount();
+  } catch {}
+}
+
+execSyncFromJobs();
+setInterval(execSyncFromJobs, 5000);
 
 // ── Telegram Activity Feed ────────────────────────────────────────────────────
 

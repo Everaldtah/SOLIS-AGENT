@@ -13,15 +13,12 @@
  */
 
 import https from "node:https";
-import { exec } from "node:child_process";
-import { writeFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { ghRead, ghWrite } from "../src/sync/github-storage.mjs";
 import { pullSession, pushSession } from "../src/storage/sessions.mjs";
 import { nextApiKey } from "../src/storage/keypool.mjs";
 import { recall as memoryRecall, saveFact as memorySaveFact, recordTurn as memoryRecordTurn, distillFacts as memoryDistill } from "../src/memory/cloud-memory.mjs";
-import { ubuntuExec } from "../src/tools/ubuntu-sandbox.mjs";
+import { openHeliosSession, isHeliosTool, execHeliosTool, HELIOS_TOOLS } from "../src/tools/helios-integration.mjs";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -46,38 +43,42 @@ const PROVIDERS = {
 // ── System prompt ─────────────────────────────────────────────────────────────
 
 function buildSystemPrompt(model, providerName) {
-  return `You are Solis, an advanced AI agent accessible via the TermuxClawAgent web interface.
-You are powered by ${model} via ${providerName}, running on Vercel cloud.
+  return `You are Solis, an advanced AI agent powered by the HELIOS coding-agent harness.
+You are powered by ${model} via ${providerName}.
 
 ## Identity
-- Name: Solis (TermuxClawAgent)
-- Interface: Web chat at termuxclawagent.vercel.app
+- Name: Solis
+- Interface: Background-job mode (responses persist to GitHub; the user may close the page)
 - Storage: GitHub repo — vault and sessions synced
 
-## Your Tools
-- **shell_exec**: Run any bash/Linux command (Amazon Linux, /tmp writable, no apt)
-- **ubuntu_exec**: Run a bash command inside a fresh Ubuntu sandbox (full apt, longer jobs). Use only when shell_exec is insufficient.
-- **file_write**: Write a file to /tmp (ephemeral — use vault to persist)
-- **vault_read**: Read a note from the GitHub memory vault
-- **vault_write**: Write a note to the GitHub memory vault
-- **vault_list**: List vault notes
-- **vault_search**: Full-text search across vault
-- **memory_recall**: Search persistent cross-session memory + vault for context
-- **memory_save**: Save a durable fact (survives across sessions)
-- **http_get**: Make an HTTP GET request
+## Execution environment (HELIOS)
+All shell, file, code, and web tools run inside a sticky Ubuntu sandbox
+provisioned by HELIOS (E2B Linux). The sandbox persists across turns within
+the same session — files you write survive until the sandbox is idle-reaped.
+Codex and OpenClaude are pre-installed inside the sandbox; HELIOS routes
+each tool call to whichever backend is strongest at it.
 
-## Persistent Memory
+## Your tools (HELIOS)
+- **shell** — bash in the Ubuntu sandbox (apt, full Linux, persistent FS)
+- **read_file**, **write_file** — sandbox filesystem I/O
+- **grep**, **glob** — ripgrep-backed search and filesystem glob
+- **apply_patch** — apply a unified diff (codex-style apply-patch)
+- **code_task** — delegate a multi-step coding task to a sub-agent (codex or openclaude)
+- **web_search**, **web_fetch** — research the web
+
+## Your tools (Solis-owned)
+- **vault_read / vault_write / vault_list / vault_search** — GitHub memory vault
+- **memory_recall** — search persistent cross-session memory + vault
+- **memory_save** — save a durable fact (survives across sessions)
+- **http_get** — simple HTTP GET
+
+## Persistent memory
 Cross-session memory lives in solis-agent-files/memory/. Relevant snippets are
-auto-injected as <PRIOR_CONTEXT>. Use memory_save for anything durable about
-the user or their projects; use memory_recall to dig deeper.
-
-## Shell environment
-- OS: Amazon Linux (Vercel serverless)
-- Available: bash, python3, node, curl, wget, git, grep, awk, sed, jq, find, zip, openssl
-- Writable path: /tmp (ephemeral — use vault_write to persist important results)
+auto-injected as <PRIOR_CONTEXT>. Use memory_save for anything durable.
 
 ## Rules
 - Always use tools for real work. Never fake or simulate output.
+- Prefer **shell** for one-shot commands; **code_task** for multi-step coding work.
 - After running commands, store useful results in the vault for future sessions.
 - Be concise but thorough. Use markdown.`;
 }
@@ -85,54 +86,8 @@ the user or their projects; use memory_recall to dig deeper.
 // ── Tools ─────────────────────────────────────────────────────────────────────
 
 const TOOLS = [
-  {
-    type: "function",
-    function: {
-      name: "shell_exec",
-      description: "Execute a bash command on the Vercel Linux server. Returns stdout, stderr, exit_code.",
-      parameters: {
-        type: "object",
-        properties: {
-          command: { type: "string" },
-          timeout_ms: { type: "integer", description: "Max ms (default 25000, max 60000)" },
-        },
-        required: ["command"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "ubuntu_exec",
-      description:
-        "Run a bash command inside a fresh Ubuntu sandbox (full apt, longer execution budget). " +
-        "Use this when shell_exec on the Vercel runtime is insufficient — apt install, compiled binaries, " +
-        "services, or jobs >60s. Has cold-start cost (~2-5s).",
-      parameters: {
-        type: "object",
-        properties: {
-          command:   { type: "string" },
-          timeout_ms:{ type: "integer", description: "Max ms (default 60000, max 120000)" },
-        },
-        required: ["command"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "file_write",
-      description: "Write content to /tmp (ephemeral). Use vault_write to persist.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: { type: "string", description: "Path inside /tmp" },
-          content: { type: "string" },
-        },
-        required: ["path", "content"],
-      },
-    },
-  },
+  // HELIOS-provided tools (shell, file ops, code_task, web_*) routed to E2B.
+  ...HELIOS_TOOLS,
   {
     type: "function",
     function: {
@@ -230,24 +185,13 @@ const vaultCache = new Map();
 
 async function execTool(name, args, ctx = {}) {
   try {
+    // HELIOS-owned tools route to the session's E2B sandbox.
+    if (isHeliosTool(name)) {
+      if (!ctx.heliosSession) return { error: "helios session not initialized" };
+      return await execHeliosTool(ctx.heliosSession, name, args);
+    }
+
     switch (name) {
-      case "shell_exec": {
-        const timeout = Math.min(args.timeout_ms ?? 25000, 60000);
-        return await new Promise(res =>
-          exec(args.command, { timeout, maxBuffer: 1024 * 512, shell: "/bin/bash" }, (err, stdout, stderr) =>
-            res({ stdout: (stdout ?? "").slice(0, 6000), stderr: (stderr ?? "").slice(0, 2000), exit_code: err?.code ?? 0 })
-          )
-        );
-      }
-      case "ubuntu_exec": {
-        return await ubuntuExec(args.command ?? "", { timeout_ms: args.timeout_ms });
-      }
-      case "file_write": {
-        const safe = args.path.startsWith("/tmp/") ? args.path : `/tmp/${args.path.replace(/^\/+/, "")}`;
-        mkdirSync(dirname(safe), { recursive: true });
-        writeFileSync(safe, args.content, "utf8");
-        return { success: true, path: safe };
-      }
       case "vault_read": {
         const rp = `vault/${args.note_path}`;
         if (vaultCache.has(rp)) return { content: vaultCache.get(rp) };
@@ -572,12 +516,19 @@ export default async function handler(req, res) {
     }
   };
 
+  const heliosOpen = await openHeliosSession(sessionId, {
+    baseUrl: providerCfg.baseUrl,
+    apiKey:  providerCfg.apiKey,
+    model:   providerCfg.model,
+  }).catch(() => null);
+  const heliosSession = heliosOpen?.session ?? null;
+
   try {
     const webSessionKey = `web_${sessionId}`;
     const stored = await pullSession(webSessionKey).catch(() => null);
     const history = stored ?? [];
 
-    const { reply, history: updated } = await runAgent(message.trim(), history, onEvent, providerCfg, { sessionId }, isCancelled);
+    const { reply, history: updated } = await runAgent(message.trim(), history, onEvent, providerCfg, { sessionId, heliosSession }, isCancelled);
     if (currentRound) rounds.push(currentRound);
 
     const toSave = updated.filter(m => m.role !== "system").slice(-HISTORY_MAX_MSGS);
@@ -615,5 +566,7 @@ export default async function handler(req, res) {
       updated: Date.now(),
       durationMs: Date.now() - created,
     }, null, 2)).catch(() => {});
+  } finally {
+    try { await heliosOpen?.close(); } catch {}
   }
 }
