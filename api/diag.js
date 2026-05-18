@@ -93,7 +93,7 @@ export default async function handler(req, res) {
       tokenSet: has("GITHUB_TOKEN"),
     },
     model: {
-      coordinator: process.env.MODEL || "deepseek-ai/deepseek-v4-pro",
+      coordinator: process.env.MODEL || "openai/gpt-oss-120b",
       baseUrl: process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1",
     },
     keys: {

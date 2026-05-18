@@ -4,8 +4,8 @@
  * Orchestrates a team of AI specialists + optional Windows desktop control.
  *
  * Flow:
- *  1. Coordinator (DeepSeek-V4-Pro) decomposes the task into subtasks
- *  2. Four parallel DeepSeek-V4-Pro workers run subtasks concurrently, each with its
+ *  1. Coordinator (GPT-OSS-120B) decomposes the task into subtasks
+ *  2. Four parallel GPT-OSS-120B workers run subtasks concurrently, each with its
  *     own NIM key for rate-limit isolation
  *  3. If task needs a real desktop, the coordinator uses Windows tools
  *  4. Coordinator synthesizes all results into a final answer
@@ -42,21 +42,21 @@ const CALL_TIMEOUT = 180_000;         // 3 min per coordinator/synthesis call
 const SPECIALIST_TIMEOUT = 60_000;    // 1 min per specialist — fail fast on broken/slow models
 
 const COORDINATOR = {
-  name: "DeepSeek-V4-Pro",
-  model: process.env.MODEL ?? "deepseek-ai/deepseek-v4-pro",
+  name: "GPT-OSS-120B",
+  model: process.env.MODEL ?? "openai/gpt-oss-120b",
   apiKey: process.env.NVIDIA_API_KEY ?? "",
   baseUrl: NIM_BASE,
 };
 
-// Single-model fan-out: every specialist runs DeepSeek-V4-Pro, each with its own NIM
+// Single-model fan-out: every specialist runs GPT-OSS-120B, each with its own NIM
 // key so we get 4-way rate-limit isolation while running the same brain
-// across all four parallel subtasks. If DeepSeek-V4-Pro ever stops responding on
+// across all four parallel subtasks. If GPT-OSS-120B ever stops responding on
 // NIM, swap the model string here in one place and redeploy.
 const SPECIALISTS = [
-  { id: 1, name: "DeepSeek-V4-Pro #1", model: "deepseek-ai/deepseek-v4-pro", apiKey: process.env.NVIDIA_KEY_DEEPSEEK ?? "", role: "Deep reasoning, math, and code analysis" },
-  { id: 2, name: "DeepSeek-V4-Pro #2", model: "deepseek-ai/deepseek-v4-pro", apiKey: process.env.NVIDIA_KEY_GLM     ?? "", role: "Structured thinking and language tasks" },
-  { id: 3, name: "DeepSeek-V4-Pro #3", model: "deepseek-ai/deepseek-v4-pro", apiKey: process.env.NVIDIA_KEY_QWEN    ?? "", role: "Factual research and broad knowledge" },
-  { id: 4, name: "DeepSeek-V4-Pro #4", model: "deepseek-ai/deepseek-v4-pro", apiKey: process.env.NVIDIA_KEY_MINIMAX ?? "", role: "Creative synthesis and diverse perspectives" },
+  { id: 1, name: "GPT-OSS-120B #1", model: "openai/gpt-oss-120b", apiKey: process.env.NVIDIA_KEY_DEEPSEEK ?? "", role: "Deep reasoning, math, and code analysis" },
+  { id: 2, name: "GPT-OSS-120B #2", model: "openai/gpt-oss-120b", apiKey: process.env.NVIDIA_KEY_GLM     ?? "", role: "Structured thinking and language tasks" },
+  { id: 3, name: "GPT-OSS-120B #3", model: "openai/gpt-oss-120b", apiKey: process.env.NVIDIA_KEY_QWEN    ?? "", role: "Factual research and broad knowledge" },
+  { id: 4, name: "GPT-OSS-120B #4", model: "openai/gpt-oss-120b", apiKey: process.env.NVIDIA_KEY_MINIMAX ?? "", role: "Creative synthesis and diverse perspectives" },
 ];
 
 const BRIDGE_URL   = process.env.WINDOWS_BRIDGE_URL   ?? "";

@@ -24,13 +24,13 @@ import { openHeliosSession, isHeliosTool, execHeliosTool, HELIOS_TOOLS } from ".
 
 const DEFAULT_API_KEY  = process.env.NVIDIA_API_KEY    ?? "";
 const DEFAULT_BASE_URL = process.env.NVIDIA_BASE_URL   ?? "https://integrate.api.nvidia.com/v1";
-const DEFAULT_MODEL    = process.env.MODEL             ?? "deepseek-ai/deepseek-v4-pro";
+const DEFAULT_MODEL    = process.env.MODEL             ?? "openai/gpt-oss-120b";
 const MAX_TOOL_ROUNDS  = parseInt(process.env.MAX_TOOL_ROUNDS   ?? "15", 10);
 const HISTORY_MAX_MSGS = parseInt(process.env.HISTORY_MAX_MSGS  ?? "60", 10);
 const CALL_TIMEOUT_MS  = parseInt(process.env.NVIDIA_TIMEOUT_MS ?? "250000", 10);
 
 const PROVIDERS = {
-  nvidia:     { baseUrl: "https://integrate.api.nvidia.com/v1",  defaultModel: "deepseek-ai/deepseek-v4-pro" },
+  nvidia:     { baseUrl: "https://integrate.api.nvidia.com/v1",  defaultModel: "openai/gpt-oss-120b" },
   openai:     { baseUrl: "https://api.openai.com/v1",            defaultModel: "gpt-4o" },
   groq:       { baseUrl: "https://api.groq.com/openai/v1",       defaultModel: "llama-3.3-70b-versatile" },
   openrouter: { baseUrl: "https://openrouter.ai/api/v1",         defaultModel: "openai/gpt-4o" },
