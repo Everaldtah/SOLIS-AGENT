@@ -27,7 +27,7 @@
   "env": {
     "GITHUB_STORAGE_REPO": "Everaldtah/solis-agent-files",
     "GITHUB_STORAGE_BRANCH": "main",
-    "MODEL": "meta/llama-3.3-70b-instruct",
+    "MODEL": "z-ai/glm-5.1",
     "NVIDIA_BASE_URL": "https://integrate.api.nvidia.com/v1",
     "NVIDIA_TIMEOUT_MS": "250000",
     "MAX_TOOL_ROUNDS": "15",

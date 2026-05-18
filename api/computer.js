@@ -4,8 +4,9 @@
  * Orchestrates a team of AI specialists + optional Windows desktop control.
  *
  * Flow:
- *  1. Coordinator (kimi-k2.6) decomposes the task into subtasks
- *  2. Specialist models run subtasks in parallel (DeepSeek, GLM, Qwen, MiniMax)
+ *  1. Coordinator (GLM-5.1) decomposes the task into subtasks
+ *  2. Four parallel GLM-5.1 workers run subtasks concurrently, each with its
+ *     own NIM key for rate-limit isolation
  *  3. If task needs a real desktop, the coordinator uses Windows tools
  *  4. Coordinator synthesizes all results into a final answer
  *
@@ -41,21 +42,21 @@ const CALL_TIMEOUT = 180_000;         // 3 min per coordinator/synthesis call
 const SPECIALIST_TIMEOUT = 60_000;    // 1 min per specialist — fail fast on broken/slow models
 
 const COORDINATOR = {
-  name: "Llama 3.3 70B",
-  model: process.env.MODEL ?? "meta/llama-3.3-70b-instruct",
+  name: "GLM-5.1",
+  model: process.env.MODEL ?? "z-ai/glm-5.1",
   apiKey: process.env.NVIDIA_API_KEY ?? "",
   baseUrl: NIM_BASE,
 };
 
-// Specialists keep their dedicated keys (rate-limit isolation) but the model
-// behind each slot is chosen for *availability* on NIM right now. Verified
-// 2026-05-14 via /diag?ping=. If a model goes down again, swap the model
-// string here and redeploy — the key wiring remains stable.
+// Single-model fan-out: every specialist runs GLM-5.1, each with its own NIM
+// key so we get 4-way rate-limit isolation while running the same brain
+// across all four parallel subtasks. If GLM-5.1 ever stops responding on
+// NIM, swap the model string here in one place and redeploy.
 const SPECIALISTS = [
-  { id: 1, name: "Llama-3.3 (DS slot)", model: "meta/llama-3.3-70b-instruct", apiKey: process.env.NVIDIA_KEY_DEEPSEEK ?? "", role: "Deep reasoning, math, and code analysis" },
-  { id: 2, name: "GLM-5.1",             model: "z-ai/glm-5.1",                apiKey: process.env.NVIDIA_KEY_GLM     ?? "", role: "Structured thinking and language tasks" },
-  { id: 3, name: "Qwen 3.5-397B",       model: "qwen/qwen3.5-397b-a17b",      apiKey: process.env.NVIDIA_KEY_QWEN    ?? "", role: "Factual research and broad knowledge" },
-  { id: 4, name: "Llama-3.1 (MM slot)", model: "meta/llama-3.1-70b-instruct", apiKey: process.env.NVIDIA_KEY_MINIMAX ?? "", role: "Creative synthesis and diverse perspectives" },
+  { id: 1, name: "GLM-5.1 #1", model: "z-ai/glm-5.1", apiKey: process.env.NVIDIA_KEY_DEEPSEEK ?? "", role: "Deep reasoning, math, and code analysis" },
+  { id: 2, name: "GLM-5.1 #2", model: "z-ai/glm-5.1", apiKey: process.env.NVIDIA_KEY_GLM     ?? "", role: "Structured thinking and language tasks" },
+  { id: 3, name: "GLM-5.1 #3", model: "z-ai/glm-5.1", apiKey: process.env.NVIDIA_KEY_QWEN    ?? "", role: "Factual research and broad knowledge" },
+  { id: 4, name: "GLM-5.1 #4", model: "z-ai/glm-5.1", apiKey: process.env.NVIDIA_KEY_MINIMAX ?? "", role: "Creative synthesis and diverse perspectives" },
 ];
 
 const BRIDGE_URL   = process.env.WINDOWS_BRIDGE_URL   ?? "";

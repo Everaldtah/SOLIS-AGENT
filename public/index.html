@@ -1037,62 +1037,21 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// Compact view: only show running jobs as one-liners. Finished/cancelled jobs
+// are removed from local cache by pollJobs(), so they never appear here.
 function renderJobs(){
-  const jobs=getJobs();
+  const jobs=getJobs().filter(j=>j.status==='running'||j.status==='cancelling');
   const badge=document.getElementById('jobs-badge');
-  const running=jobs.filter(j=>j.status==='running'||j.status==='cancelling').length;
-  badge.textContent=jobs.length+' job'+(jobs.length!==1?'s':'')+(running?` · ${running} running`:'');
-  badge.className='badge'+(running?' live':'');
+  badge.textContent=jobs.length?`${jobs.length} running`:'idle';
+  badge.className='badge'+(jobs.length?' live':'');
   const stopAll=document.getElementById('jobs-stop-all');
-  if(stopAll) stopAll.style.display=running?'inline-block':'none';
+  if(stopAll) stopAll.style.display=jobs.length?'inline-block':'none';
   const c=document.getElementById('jobs-list');
-  if(!jobs.length){c.innerHTML='<p class="empty">No background jobs. Toggle ⚡ BG and submit a message.</p>';return;}
+  if(!jobs.length){c.innerHTML='<p class="empty">No subprocesses running.</p>';return;}
   c.innerHTML=jobs.map(job=>{
-    const rc=(job.rounds||[]).length;
-    const durTag=job.durationMs?`<span class="tag dur">${fmtDur(job.durationMs)}</span>`:'';
-    const rcTag=rc?`<span class="tag rounds">${rc}r</span>`:'';
-    const replyBlock=job.status==='done'&&job.reply?`<div class="job-reply">${escHtml(job.reply.slice(0,200))}${job.reply.length>200?'…':''}</div>`:'';
-    const errBlock=job.status==='error'&&job.error?`<div class="job-error">Error: ${escHtml(job.error)}</div>`:'';
-
-    // Rounds detail (thinking + tools)
-    let roundsHtml='';
-    if(rc>0){
-      const roundsInner=(job.rounds||[]).map(r=>{
-        let h=`<div class="jr-round"><div class="jr-rlabel">Round ${r.round}</div>`;
-        if(r.thinking)h+=`<div class="jr-think">💭 ${escHtml(r.thinking)}</div>`;
-        for(const tc of(r.toolCalls||[])){h+=`<div class="jr-tool">🔧 <strong>${escHtml(tc.tool)}</strong> ${escHtml(tc.args)}</div>`;if(tc.result)h+=`<div class="jr-res">${escHtml(tc.result)}</div>`;}
-        h+='</div>';return h;
-      }).join('');
-      roundsHtml=`<div class="job-rounds" id="jr-${escHtml(job.id)}">${roundsInner}</div>
-      <button class="jr-toggle" onclick="toggleRounds('${escHtml(job.id)}')">▶ ${rc} round${rc!==1?'s':''} of reasoning</button>`;
-    }
-
-    // Computer-mode tool actions (shell + windows) — shown when this is a Computer Mode job
-    let toolActionsHtml='';
-    const toolActions=job.toolActions||[];
-    if(toolActions.length){
-      const inner=toolActions.map(ta=>{
-        const icon=ta.kind==='linux'?'🐧':ta.kind==='windows'?'🪟':'🔧';
-        return `<div class="jr-tool">${icon} <strong>${escHtml(ta.action)}</strong> <span style="color:#64748b;font-family:ui-monospace,monospace">${escHtml((ta.args||'').slice(0,150))}</span>${ta.result?`<pre class="jr-res">${escHtml((ta.result||'').slice(0,600))}</pre>`:''}</div>`;
-      }).join('');
-      toolActionsHtml=`<div class="job-rounds open" style="margin-top:6px">${inner}</div>`;
-    }
-    // Computer-mode plan + specialists summary
-    let planHtml='';
-    if(job.mode==='computer'&&Array.isArray(job.plan)&&job.plan.length){
-      planHtml='<div class="jr-rlabel" style="margin-top:6px">Plan</div>'+job.plan.map(p=>`<div class="jr-tool">▸ <strong>${escHtml(p.model||'')}</strong> ${escHtml((p.task||'').slice(0,140))}</div>`).join('');
-    }
-    if(planHtml||toolActionsHtml){
-      roundsHtml=`<div class="job-rounds open">${planHtml}${toolActionsHtml}</div>`+roundsHtml;
-    }
-
-    const actions=job.status==='done'
-      ?`<div class="job-actions"><button class="job-load-btn" onclick="loadJobToChat('${escHtml(job.id)}')">Load reply in chat</button><button class="job-del-btn" onclick="removeJob('${escHtml(job.id)}')">✕</button></div>`
-      :job.status==='error'?`<div class="job-actions"><button class="job-del-btn" onclick="removeJob('${escHtml(job.id)}')">✕ dismiss</button></div>`
-      :job.status==='cancelled'?`<div class="job-actions"><button class="job-del-btn" onclick="removeJob('${escHtml(job.id)}')">✕ dismiss</button></div>`
-      :(job.status==='running'||job.status==='cancelling')?`<div class="job-actions"><button class="job-stop-btn" onclick="cancelJob('${escHtml(job.id)}')" ${job.status==='cancelling'?'disabled':''}>${job.status==='cancelling'?'stopping…':'✕ Stop'}</button></div>`:'';
-
-    return`<div class="job-entry"><div class="job-head"><div class="job-msg">${escHtml(job.message.slice(0,120))}${job.message.length>120?'…':''}</div><div class="job-meta"><span class="tag ${job.status}">${job.status}</span>${rcTag}${durTag}<span class="tag">${fmtTime(job.created)}</span></div></div>${replyBlock}${errBlock}${roundsHtml}${actions}</div>`;
+    const stopBtn=`<button class="job-stop-btn" onclick="cancelJob('${escHtml(job.id)}')" ${job.status==='cancelling'?'disabled':''}>${job.status==='cancelling'?'stopping…':'✕ Stop'}</button>`;
+    const msg=escHtml((job.message||'').slice(0,80))+((job.message||'').length>80?'…':'');
+    return `<div class="job-entry"><div class="job-head"><div class="job-msg">⚙ ${msg}</div><div class="job-meta"><span class="tag ${job.status}">${job.status}</span><span class="tag">${fmtTime(job.created)}</span>${stopBtn}</div></div></div>`;
   }).join('');
 }
 
@@ -1100,16 +1059,22 @@ function toggleRounds(jobId){const el=document.getElementById(`jr-${jobId}`);if(
 function loadJobToChat(id){const j=getJobs().find(j=>j.id===id);if(!j)return;addMessage('user',j.message);if(j.reply)addMessage('agent',j.reply);}
 
 async function pollJobs(){
-  const running=getJobs().filter(j=>j.status==='running');
+  const running=getJobs().filter(j=>j.status==='running'||j.status==='cancelling');
   if(!running.length)return;
   await Promise.all(running.map(async job=>{
     try{
       const r=await fetch('/job?id='+encodeURIComponent(job.id));
       if(!r.ok)return;
       const data=await r.json();
-      upsertJob({...job,...data});
-      if(job.status==='running'&&data.status==='done')showNotification('Job done: '+job.message.slice(0,50));
-      else if(job.status==='running'&&data.status==='error')showNotification('Job error: '+(data.error||'?'),true);
+      if(data.status==='running'||data.status==='cancelling'){
+        // Keep only minimal fields — no toolActions/execVisuals/rounds/plan
+        // so the Background Jobs / Linux Shell / Exec Viewer panels stay clean.
+        upsertJob({id:job.id,status:data.status,message:job.message,created:job.created});
+      } else {
+        removeJob(job.id);
+        if(data.status==='done')showNotification('Job done: '+(job.message||'').slice(0,50));
+        else if(data.status==='error')showNotification('Job error: '+(data.error||'?'),true);
+      }
     }catch{}
   }));
 }
@@ -1136,9 +1101,29 @@ function showNotification(msg,isErr=false){
   if(!isErr&&typeof Notification!=='undefined'&&Notification.permission==='granted'){try{new Notification('Solis',{body:msg});}catch{}}
 }
 
+// Fresh-page policy: on every load, drop terminal jobs and any heavy
+// rehydration data. Only confirm-still-running jobs survive, shown as one-liners.
+const pageLoadAt=Date.now();
+async function bootPruneJobs(){
+  const cached=getJobs();
+  const maybeRunning=cached.filter(j=>j.status==='running'||j.status==='cancelling');
+  saveJobs([]); renderJobs();
+  if(!maybeRunning.length){pollJobs();return;}
+  const kept=[];
+  await Promise.all(maybeRunning.map(async j=>{
+    try{
+      const r=await fetch('/job?id='+encodeURIComponent(j.id));
+      if(!r.ok)return;
+      const data=await r.json();
+      if(data.status==='running'||data.status==='cancelling'){
+        kept.push({id:j.id,status:data.status,message:j.message,created:j.created});
+      }
+    }catch{}
+  }));
+  saveJobs(kept); renderJobs();
+}
+bootPruneJobs();
 setInterval(pollJobs,5000);
-renderJobs();
-pollJobs();
 
 // ── Linux Shell Console ──────────────────────────────────────────────────────
 //
@@ -1212,11 +1197,12 @@ function shellOnToolResult(key, result, isError = false) {
   pushShellRow({ result, isError, key });
 }
 
-/** Rehydrate the panel from job toolActions on load + on poll. De-duped by (action,at). */
+/** Rehydrate the panel from job toolActions. Only for jobs started in this page session. */
 function shellSyncFromJobs() {
   try {
     const jobs = getJobs();
     for (const job of jobs) {
+      if (!job.created || job.created < pageLoadAt) continue;
       const actions = job.toolActions || [];
       for (const ta of actions) {
         if (ta.kind !== 'linux' || !ta.result) continue;
@@ -1335,11 +1321,12 @@ function execApplyEvent(evt) {
   }
 }
 
-/** Rehydrate from job records (execVisuals[]). De-duped by execId. */
+/** Rehydrate from job records (execVisuals[]). Only for jobs started in this page session. */
 function execSyncFromJobs() {
   try {
     const jobs = getJobs();
     for (const job of jobs) {
+      if (!job.created || job.created < pageLoadAt) continue;
       const evs = job.execVisuals || [];
       for (const ev of evs) {
         if (!ev.execId || execBlocks.has(ev.execId)) continue;
