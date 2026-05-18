@@ -41,7 +41,7 @@ async function appendActivity(entry) {
 const TELEGRAM_TOKEN    = process.env.TELEGRAM_TOKEN    ?? "";
 const NVIDIA_API_KEY    = process.env.NVIDIA_API_KEY    ?? ""; // kept for fallback; pool used at call time
 const NVIDIA_BASE_URL   = process.env.NVIDIA_BASE_URL   ?? "https://integrate.api.nvidia.com/v1";
-const MODEL             = process.env.MODEL             ?? "z-ai/glm-5.1";
+const MODEL             = process.env.MODEL             ?? "deepseek-ai/deepseek-v4-pro";
 const MAX_TOOL_ROUNDS   = parseInt(process.env.MAX_TOOL_ROUNDS   ?? "15", 10);
 const HISTORY_MAX_MSGS  = parseInt(process.env.HISTORY_MAX_MSGS  ?? "60", 10);
 const NVIDIA_TIMEOUT_MS = parseInt(process.env.NVIDIA_TIMEOUT_MS ?? "250000", 10);
