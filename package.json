@@ -34,6 +34,7 @@
     "telegram": "node telegram-agent-bridge.mjs",
     "test": "node --test dist/**/*.test.js",
     "install-termux": "bash scripts/install-termux.sh",
+    "setup-service": "bash scripts/setup-termux-service.sh",
     "setup": "node scripts/setup.js"
   },
   "dependencies": {

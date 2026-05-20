@@ -105,6 +105,14 @@ class TermuxAgentCLI {
       .description("Show agent status")
       .action(this.handleStatus.bind(this));
 
+    // Daemon command — background service management
+    this.program
+      .command("daemon [subcommand]")
+      .description("Manage the background agent daemon (setup/start/stop/restart/status)")
+      .option("--bin <path>", "Path to termux-agent binary (used during setup)")
+      .allowUnknownOption(false)
+      .action(this.handleDaemon.bind(this));
+
     // Default: show banner and help
     this.program.action(() => {
       console.log(BANNER);
@@ -249,6 +257,18 @@ class TermuxAgentCLI {
 
     console.log("Status:");
     Object.entries(status).forEach(([k, v]) => console.log(`  ${k}: ${v}`));
+  }
+
+  private async handleDaemon(subcommand: string | undefined, options: any): Promise<void> {
+    const sub = subcommand ?? "status";
+    try {
+      // Dynamic import keeps the daemon module out of the main bundle
+      const { daemonCli } = await import("../services/termux-daemon.mjs" as any);
+      await daemonCli(sub, { bin: options.bin });
+    } catch (err: unknown) {
+      this.logger.error(`Daemon command failed: ${(err as Error).message}`);
+      process.exit(1);
+    }
   }
 
   public async run(argv: string[]): Promise<void> {

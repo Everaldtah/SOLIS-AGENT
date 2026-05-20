@@ -203,6 +203,84 @@ export function getAndroidTools(): ToolDefinition[] {
       }, required: ["on"] },
       async (a) => run("termux-torch", [a.on ? "on" : "off"])),
 
+    // ── Call Log (dual-SIM aware) ─────────────────────────────────────────────
+    t("android_call_log", "Retrieve the device call log. Supports dual-SIM via sim_slot filter.",
+      {
+        type: "object",
+        properties: {
+          limit:    { type: "number", description: "Max entries to return (default 20)." },
+          type:     { type: "string", enum: ["all", "incoming", "outgoing", "missed"], description: "Filter by call type." },
+          sim_slot: { type: "number", enum: [0, 1], description: "Dual-SIM slot index (0 = primary, 1 = secondary)." },
+          offset:   { type: "number", description: "Skip first N entries (for pagination)." },
+        },
+      },
+      async (a) => run("termux-call-log", [
+        "-l", String(a.limit  ?? 20),
+        "-o", String(a.offset ?? 0),
+        ...(a.type     ? ["-t", a.type]       : []),
+        ...(a.sim_slot != null ? ["-s", String(a.sim_slot)] : []),
+      ])),
+
+    // ── Wake Lock ─────────────────────────────────────────────────────────────
+    t("android_wake_lock", "Acquire a partial wake lock so Android does not suspend the process.",
+      { type: "object", properties: {} },
+      async () => run("termux-wake-lock")),
+
+    t("android_wake_unlock", "Release the previously acquired wake lock.",
+      { type: "object", properties: {} },
+      async () => run("termux-wake-unlock")),
+
+    // ── Notification management ───────────────────────────────────────────────
+    t("android_notification_list", "List active notifications posted by Termux.",
+      { type: "object", properties: {} },
+      async () => run("termux-notification-list")),
+
+    t("android_notification_remove", "Remove (cancel) a Termux notification by ID.",
+      { type: "object", properties: { id: { type: "string", description: "Notification ID to remove." } }, required: ["id"] },
+      async (a) => run("termux-notification-remove", [a.id])),
+
+    t("android_notification_channel", "Create or update an Android notification channel (required for Android 8+).",
+      {
+        type: "object",
+        properties: {
+          id          : { type: "string", description: "Channel ID (unique, e.g. 'agent-status')." },
+          name        : { type: "string", description: "Human-readable channel name." },
+          description : { type: "string", description: "Channel description shown in system settings." },
+          importance  : { type: "string", enum: ["none", "min", "low", "default", "high"], description: "Importance level (controls sound/heads-up)." },
+        },
+        required: ["id", "name"],
+      },
+      async (a) => run("termux-notification", [
+        "--channel",     a.id,
+        "--channel-name", a.name,
+        ...(a.description ? ["--channel-description", a.description] : []),
+        ...(a.importance  ? ["--importance",          a.importance]  : []),
+        // Post a silent dummy notification to create the channel
+        "--title", "channel-init", "--content", "", "--priority", "min",
+      ])),
+
+    // ── Job Scheduler (Android 10+ background work) ───────────────────────────
+    t("android_job_schedule", "Schedule a one-off or periodic background task via Android JobScheduler. Useful on Android 10+ where background execution is restricted.",
+      {
+        type: "object",
+        properties: {
+          script    : { type: "string", description: "Shell command or script path to run." },
+          delay_ms  : { type: "number", description: "Minimum delay before execution (milliseconds)." },
+          network   : { type: "string", enum: ["any", "unmetered", "none"], description: "Network requirement." },
+          charging  : { type: "boolean", description: "Require device to be charging." },
+          persistent: { type: "boolean", description: "Persist across reboots." },
+        },
+        required: ["script"],
+      },
+      async (a) => {
+        const args = [a.script];
+        if (a.delay_ms   != null) args.push("--delay",     String(a.delay_ms));
+        if (a.network)             args.push("--network",   a.network);
+        if (a.charging)            args.push("--require-charging");
+        if (a.persistent)          args.push("--persist");
+        return run("termux-job-scheduler", args);
+      }),
+
     // ── System ───────────────────────────────────────────────────────────────
     t("android_open", "Open a URL, file, or intent on the device.",
       { type: "object", properties: { target: { type: "string" } }, required: ["target"] },

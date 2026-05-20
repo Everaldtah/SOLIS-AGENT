@@ -1,6 +1,7 @@
 #!/bin/bash
 # TermuxAgent Installation Script for Android/Termux
-# Token-optimized AI agent setup
+# Compatible with Termux v0.118+ (F-Droid / GitHub releases)
+# See: https://github.com/termux/termux-app/releases
 
 set -e
 
@@ -13,7 +14,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 INSTALL_DIR="$HOME/.termux-agent"
-BIN_DIR="$PREFIX/bin"
+BIN_DIR="${PREFIX:-/data/data/com.termux/files/usr}/bin"
 REPO_URL="https://github.com/termux-agent/termux-agent"
 
 echo -e "${BLUE}"
@@ -70,6 +71,26 @@ if ! check_command npm; then
 fi
 
 echo -e "  ✅ npm $(npm --version)"
+
+# termux-api: Android device integration (camera, SMS, notifications, wake lock, etc.)
+if ! check_command termux-api; then
+    echo -e "${YELLOW}📦 Installing termux-api...${NC}"
+    pkg install -y termux-api
+    echo -e "  ${YELLOW}⚠️  Also install the Termux:API companion app from F-Droid!${NC}"
+else
+    echo -e "  ✅ termux-api found"
+fi
+
+# termux-services: runit service supervisor for background daemon support
+if ! check_command sv; then
+    echo -e "${YELLOW}📦 Installing termux-services (runit)...${NC}"
+    pkg install -y termux-services
+fi
+if check_command sv; then
+    echo -e "  ✅ termux-services (runit) found"
+else
+    echo -e "${YELLOW}  ⚠️  termux-services not installed — daemon mode will be limited${NC}"
+fi
 
 # Optional: Check for Python (for code execution tool)
 if check_command python3; then
@@ -170,6 +191,21 @@ if [ ! -f "$CONFIG_FILE" ]; then
 EOF
 fi
 
+# Offer background service setup
+echo -e "${BLUE}🔧 Background service setup...${NC}"
+read -p "Install as a persistent background service? (Y/n) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [ -f "$SCRIPT_DIR/setup-termux-service.sh" ]; then
+        bash "$SCRIPT_DIR/setup-termux-service.sh"
+    else
+        echo -e "${YELLOW}⚠️  setup-termux-service.sh not found — run it manually later${NC}"
+    fi
+else
+    echo -e "${YELLOW}  Skipped. Run later with: termux-agent daemon setup${NC}"
+fi
+
 # Run setup wizard
 echo -e "${BLUE}🚀 Running setup wizard...${NC}"
 echo -e "${YELLOW}   You can run this anytime with: termux-agent setup${NC}\n"
@@ -190,10 +226,12 @@ echo "╚═══════════════════════�
 echo -e "${NC}"
 
 echo "Quick start:"
-echo "  termux-agent chat       - Start interactive chat"
-echo "  termux-agent ask        - Ask a single question"
-echo "  termux-agent status     - Check agent status"
-echo "  termux-agent --help     - Show all commands"
+echo "  termux-agent chat           - Start interactive chat"
+echo "  termux-agent ask            - Ask a single question"
+echo "  termux-agent daemon start   - Start background daemon"
+echo "  termux-agent daemon status  - Check daemon status"
+echo "  termux-agent status         - Check agent status"
+echo "  termux-agent --help         - Show all commands"
 echo ""
 echo "Configuration:"
 echo "  Config file: ~/.termux-agent/config.json"
