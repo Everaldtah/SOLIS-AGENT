@@ -5,7 +5,7 @@ Runs on your Windows 10 machine and gives the AI agent full desktop control.
 
 Install deps: pip install flask pyautogui Pillow psutil
 Run:  python windows-bridge.py --token your-secret-token
-Then set WINDOWS_BRIDGE_URL=http://your-ip:5000 and WINDOWS_BRIDGE_TOKEN in Vercel.
+Then set WINDOWS_BRIDGE_URL=https://your-ip:5000 and WINDOWS_BRIDGE_TOKEN in Vercel.
 
 Security: ALWAYS set --token. Expose only via a VPN, reverse proxy, or ngrok tunnel.
 """
@@ -241,7 +241,7 @@ if __name__ == "__main__":
     print(f"  Screen    : {screen_w}x{screen_h}")
     print(f"  OS        : {platform.system()} {platform.version()}")
     print("=" * 60)
-    print("  Set in Vercel: WINDOWS_BRIDGE_URL=http://YOUR_IP_HERE:" + str(args.port))
+print("  Set in Vercel: WINDOWS_BRIDGE_URL=https://YOUR_IP_HERE:" + str(args.port))
     print("=" * 60)
 
     app.run(host=args.host, port=args.port, threaded=True)

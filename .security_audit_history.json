@@ -1,0 +1,23 @@
+[
+  {
+    "timestamp": "2026-05-22T00:09:19.535635",
+    "issues_found": 2,
+    "fixes_generated": 2,
+    "issues": [
+      {
+        "file": "scripts/windows-bridge.py",
+        "line": 8,
+        "type": "http_instead_https",
+        "severity": "MEDIUM",
+        "fix": "Use HTTPS instead of HTTP"
+      },
+      {
+        "file": "scripts/windows-bridge.py",
+        "line": 244,
+        "type": "http_instead_https",
+        "severity": "MEDIUM",
+        "fix": "Use HTTPS instead of HTTP"
+      }
+    ]
+  }
+]
